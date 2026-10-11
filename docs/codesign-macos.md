@@ -36,7 +36,7 @@ even though the password is correct. The fix is to export with the
 `-legacy` flag (OpenSSL 3.0+), which writes the older SHA1 + 3DES
 algorithms macOS accepts. `local-ca` does this; do not remove the flag.
 
-## The four things that must be right
+## The three things that must be right
 
 1. Correct extended key usage on the cert.
    The cert must carry `extendedKeyUsage = critical, codeSigning`.
@@ -65,38 +65,22 @@ algorithms macOS accepts. `local-ca` does this; do not remove the flag.
    you skip it, `codesign` will prompt once on first use; clicking
    "Always Allow" there achieves the same result by hand.
 
-4. The cert trusted for the code-signing policy.
-   A self-signed cert imports untrusted (`CSSMERR_TP_NOT_TRUSTED`), so
-   `find-identity -v` (valid-only) hides it and signature verification
-   sees an untrusted signer. We add a trust setting in the user/login
-   domain:
-
-   ```
-   security add-trusted-cert -r trustRoot -p codeSign \
-     -k ~/Library/Keychains/login.keychain-db <cert>
-   ```
-
-   `-p codeSign` scopes the trust to code signing; no `-d`, so it is the
-   user/login domain (the `-d` admin/system domain needs sudo). This
-   shows a one-time "you are making changes to your Certificate Trust
-   Settings" dialog asking for your login password. Unlike the partition
-   list, `add-trusted-cert` has no command-line password flag, so this
-   dialog cannot be bypassed with `LOCAL_CA_KEYCHAIN_PASSWORD`; it needs a
-   GUI session.
-
 ## Verify success
 
-The identity must show up as valid for the codesigning policy:
+The identity must show up for the codesigning policy:
 
 ```
-security find-identity -v -p codesigning
+security find-identity -p codesigning
 ```
 
-You should see a line containing `"<name>"`. The `-v` means valid-only;
-because step 4 trusted the cert, it is valid and listed. If you see "0
-valid identities", the trust step did not take (re-run the command and
-complete the trust-settings dialog). `local-ca` runs this `-v` check
-itself and fails if the name is not listed.
+You should see a line containing `"<name>"`. Note: do NOT use the `-v`
+(valid-only) flag here. Our cert is self-signed, so it is untrusted and
+lists as `CSSMERR_TP_NOT_TRUSTED`; `-v` hides untrusted identities and
+would wrongly report "0 valid identities". That is fine: an untrusted
+identity still signs. Trust is a verification concern, not a signing one,
+and the macOS LAN-access grant keys on the code identity, not on chain
+trust. `local-ca` runs this check itself (without `-v`) and fails only if
+the name is not listed at all.
 
 A real sign confirms it and must not prompt once the partition list is
 set:

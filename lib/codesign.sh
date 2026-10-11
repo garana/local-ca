@@ -15,15 +15,23 @@
 DEFAULT_CODESIGN_BITS=2048
 DEFAULT_CODESIGN_DAYS=3650
 
-## Exit 0 if a VALID code-signing identity with common name $1 is in the
-## keychain, else 1. Uses 'find-identity -v' (valid-only): codesign_ensure
-## adds a code-signing trust setting to the self-signed cert after import,
-## so it is trusted and therefore valid. The same -v predicate backs both
-## the idempotency check and the post-import gate, so the gate is honest
-## (a trusted, valid identity) and a re-run reuses the existing identity
-## instead of duplicating it. See issue #5 (Option A).
+## Exit 0 if a code-signing identity with common name $1 is in the
+## keychain, else 1. Deliberately uses 'find-identity -p codesigning'
+## WITHOUT -v: our certs are self-signed and therefore untrusted, and the
+## -v (valid-only) filter hides untrusted identities. An untrusted
+## identity still signs fine (trust is a verification concern, not a
+## signing one; the macOS LAN-access grant keys on the code identity, not
+## on chain trust), so -v is the wrong gate here. Using the same
+## predicate for the idempotency check and the post-import gate also
+## means a re-run reuses an existing cert instead of duplicating it. See
+## issue #3.
+##
+## Do NOT reintroduce -v with a trust setting (that was issue #5 / Option
+## A): on macOS a user-domain 'add-trusted-cert' does not make a
+## self-signed code-signing cert pass 'find-identity -v', so the gate
+## died even after the trust dialog was answered. Reverted in issue #7.
 codesign_identity_exists() {
-  security find-identity -v -p codesigning 2>/dev/null \
+  security find-identity -p codesigning 2>/dev/null \
     | grep -Fq "\"$1\""
 }
 
@@ -97,17 +105,6 @@ codesign_ensure() {
     -T /usr/bin/codesign -T /usr/bin/security >&2 \
     || die "security import into the login keychain failed"
 
-  # Trust the self-signed cert for the code-signing policy, in the
-  # user/login trust domain (no -d; -d is the admin/system domain and
-  # needs sudo). Without this the cert stays untrusted
-  # (CSSMERR_TP_NOT_TRUSTED), so 'find-identity -v' would not list it and
-  # signature verification would see an untrusted signer. This shows a
-  # one-time "you are making changes to your Certificate Trust Settings"
-  # auth dialog (your login password); it cannot be fed a password on the
-  # command line the way set-key-partition-list can. See issue #5.
-  security add-trusted-cert -r trustRoot -p codeSign -k "$kc" "$crt" >&2 \
-    || die "security add-trusted-cert failed; the identity would not be trusted"
-
   # Set the key partition list so codesign reads the private key without a
   # prompt on every sign. This needs the keychain (login) password.
   local kcpass
@@ -133,13 +130,13 @@ codesign_ensure() {
   openssl x509 -outform der -in "$crt" -out "$cer" 2>/dev/null || true
   chmod 644 "$cer" 2>/dev/null || true
 
-  # Verify the identity is valid (trusted) for code signing. With the
-  # trust setting added above, the self-signed cert is valid, so the -v
-  # (valid-only) gate lists it.
+  # Verify the identity is usable for code signing. The cert is
+  # self-signed, so it lists as untrusted (CSSMERR_TP_NOT_TRUSTED); that
+  # is expected and does not stop codesign from signing with it.
   if ! codesign_identity_exists "$name"; then
-    die "identity '$name' not listed by 'security find-identity -v -p codesigning' after import and trust"
+    die "identity '$name' not listed by 'security find-identity -p codesigning' after import"
   fi
-  log "verified: 'security find-identity -v -p codesigning' lists '$name' (trusted, valid code-signing identity)"
+  log "verified: 'security find-identity -p codesigning' lists '$name' (self-signed, shown untrusted; still usable to sign)"
   [ -f "$cer" ] && log "exported cert: $cer"
 
   printf '%s\n' "$name"
