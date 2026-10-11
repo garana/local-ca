@@ -15,10 +15,18 @@
 DEFAULT_CODESIGN_BITS=2048
 DEFAULT_CODESIGN_DAYS=3650
 
-## Exit 0 if a code-signing identity with common name $1 is already in
-## the keychain (as listed by codesign policy), else 1.
+## Exit 0 if a code-signing identity with common name $1 is in the
+## keychain, else 1. Deliberately uses 'find-identity -p codesigning'
+## WITHOUT -v: our certs are self-signed and therefore untrusted, and the
+## -v (valid-only) filter hides untrusted identities. An untrusted
+## identity still signs fine (trust is a verification concern, not a
+## signing one; the macOS LAN-access grant keys on the code identity, not
+## on chain trust), so -v is the wrong gate here. Using the same
+## predicate for the idempotency check and the post-import gate also
+## means a re-run reuses an existing cert instead of duplicating it. See
+## issue #3.
 codesign_identity_exists() {
-  security find-identity -v -p codesigning 2>/dev/null \
+  security find-identity -p codesigning 2>/dev/null \
     | grep -Fq "\"$1\""
 }
 
@@ -117,11 +125,13 @@ codesign_ensure() {
   openssl x509 -outform der -in "$crt" -out "$cer" 2>/dev/null || true
   chmod 644 "$cer" 2>/dev/null || true
 
-  # Verify the identity is usable for code signing.
+  # Verify the identity is usable for code signing. The cert is
+  # self-signed, so it lists as untrusted (CSSMERR_TP_NOT_TRUSTED); that
+  # is expected and does not stop codesign from signing with it.
   if ! codesign_identity_exists "$name"; then
-    die "identity '$name' not listed by 'security find-identity -v -p codesigning' after import"
+    die "identity '$name' not listed by 'security find-identity -p codesigning' after import"
   fi
-  log "verified: 'security find-identity -v -p codesigning' lists '$name'"
+  log "verified: 'security find-identity -p codesigning' lists '$name' (self-signed, shown untrusted; still usable to sign)"
   [ -f "$cer" ] && log "exported cert: $cer"
 
   printf '%s\n' "$name"
