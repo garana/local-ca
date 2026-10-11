@@ -210,6 +210,14 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+# The lookup must target the login keychain explicitly, not the global
+# search list (a corrupted user search list otherwise hides the identity
+# and the gate dies). Issue #11.
+@test "codesign_identity_exists queries the login keychain explicitly" {
+  run grep -E 'find-identity[[:space:]]+-p[[:space:]]+codesigning[[:space:]]+"\$\(login_keychain\)"' "$LIB/codesign.sh"
+  [ "$status" -eq 0 ]
+}
+
 # --- set-key-partition-list scope guard (issue #9) -------------------------
 
 # The partition-list call must be scoped to our key with -l "$name".
