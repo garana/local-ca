@@ -189,18 +189,26 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-# --- codesign find-identity predicate guard (issue #3) ---------------------
+# --- codesign trust + predicate guard (issue #5, Option A) -----------------
 
-# Our certs are self-signed, hence untrusted. 'find-identity -v' hides
-# untrusted identities, so the existence-check and success-gate must use
-# 'find-identity -p codesigning' WITHOUT -v, or the command dies after a
-# successful import and re-runs duplicate the cert.
-@test "codesign.sh never uses find-identity with -v" {
-  run grep -nE 'find-identity[[:space:]]+-v' "$LIB/codesign.sh"
+# Option A: codesign_ensure trusts the self-signed cert for the code
+# signing policy, so it becomes valid and the -v (valid-only) gate lists
+# it. The keychain import/trust steps are not run in the automated suite
+# (they mutate the login keychain and prompt), so these guard the source.
+
+# The cert must be trusted for the codeSign policy in the user/login
+# domain (no -d, which would be the sudo-only admin domain).
+@test "codesign.sh trusts the cert for the codeSign policy (user domain)" {
+  run grep -E 'add-trusted-cert .*-p[[:space:]]+codeSign' "$LIB/codesign.sh"
+  [ "$status" -eq 0 ]
+  # must not use -d (admin/system domain, needs sudo)
+  run grep -E 'add-trusted-cert[[:space:]]+-d' "$LIB/codesign.sh"
   [ "$status" -ne 0 ]
 }
 
-@test "codesign_identity_exists uses find-identity -p codesigning (no -v)" {
-  run grep -E 'security[[:space:]]+find-identity[[:space:]]+-p[[:space:]]+codesigning' "$LIB/codesign.sh"
+# With trust added, the existence-check and success-gate use the valid-only
+# predicate, so a trusted (valid) identity is required and recognized.
+@test "codesign_identity_exists uses find-identity -v -p codesigning" {
+  run grep -E 'security[[:space:]]+find-identity[[:space:]]+-v[[:space:]]+-p[[:space:]]+codesigning' "$LIB/codesign.sh"
   [ "$status" -eq 0 ]
 }
