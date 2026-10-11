@@ -118,9 +118,26 @@ codesign_ensure() {
   fi
 
   if [ -n "$kcpass" ]; then
-    security set-key-partition-list -S apple-tool:,apple:,codesign: \
-      -s -k "$kcpass" "$kc" >/dev/null 2>&1 \
-      || warn "set-key-partition-list failed; codesign may prompt on first sign"
+    # Scope the partition-list change to OUR key with -l "$name". Without
+    # it, -s matches every signing key in the keychain; on a populated
+    # login keychain that includes keys from other apps/the system whose
+    # partition list cannot be modified, and the call then fails. Import
+    # sets our key's label to "$name", so -l targets exactly it.
+    #
+    # security prints the matched key's attributes on success and an error
+    # on failure, but a no-match still exits 0, so exit code alone is not a
+    # reliable signal. We capture the output and confirm it actually
+    # matched our key (the label appears in the dump). See issue #9.
+    local plist_out
+    if plist_out="$(security set-key-partition-list \
+          -S apple-tool:,apple:,codesign: -l "$name" -s \
+          -k "$kcpass" "$kc" 2>&1)" \
+       && printf '%s' "$plist_out" | grep -Fq "\"$name\""; then
+      log "key partition list set for '$name'; codesign will not prompt per sign"
+    else
+      warn "set-key-partition-list did not apply to '$name'; codesign may prompt on first sign (grant 'Always Allow' there)"
+      warn "security said: ${plist_out:-<no output>}"
+    fi
   else
     warn "no keychain password given; skipping set-key-partition-list"
     warn "codesign may prompt once on first sign (grant 'Always Allow' there)"
