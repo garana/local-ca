@@ -1,0 +1,27 @@
+# local-ca: never commit any key, cert, or generated state.
+#
+# State defaults to ~/.local-ca (outside the repo), so a fresh clone has
+# zero secrets. These rules are a backstop in case LOCAL_CA_HOME is
+# pointed inside the tree, plus editor/OS cruft.
+
+# generated state directories
+/state/
+/.local-ca/
+
+# key / cert / CA material, anywhere in the tree
+*.key
+*.crt
+*.cer
+*.pem
+*.csr
+*.p12
+*.pfx
+*.der
+
+# per-user tooling config
+claude.settings.local.json
+*.local.*
+.local-dev/
+
+# OS / editor cruft
+.DS_Store

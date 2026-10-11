@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+#
+# local-ca: a small personal certificate toolkit.
+#
+#   Job 1 (cross-platform): a local development CA plus leaf TLS certs,
+#   trusted in the OS and in Firefox.
+#   Job 2 (macOS only): stable self-signed code-signing identities.
+#
+# All state lives under $LOCAL_CA_HOME (default ~/.local-ca) and is never
+# committed. Run 'local-ca help' for commands.
+
+set -euo pipefail
+
+# Resolve the directory of this script, following symlinks, so lib/*.sh
+# can be sourced regardless of where the tool is invoked from.
+_src="${BASH_SOURCE[0]}"
+while [ -h "$_src" ]; do
+  _dir="$(cd -P "$(dirname "$_src")" >/dev/null 2>&1 && pwd)"
+  _src="$(readlink "$_src")"
+  case "$_src" in /*) ;; *) _src="$_dir/$_src" ;; esac
+done
+LOCAL_CA_LIB="$(cd -P "$(dirname "$_src")" >/dev/null 2>&1 && pwd)/lib"
+
+# shellcheck source=lib/common.sh
+. "$LOCAL_CA_LIB/common.sh"
+# shellcheck source=lib/ca.sh
+. "$LOCAL_CA_LIB/ca.sh"
+# shellcheck source=lib/cert.sh
+. "$LOCAL_CA_LIB/cert.sh"
+# shellcheck source=lib/firefox.sh
+. "$LOCAL_CA_LIB/firefox.sh"
+# shellcheck source=lib/trust-macos.sh
+. "$LOCAL_CA_LIB/trust-macos.sh"
+# shellcheck source=lib/trust-linux.sh
+. "$LOCAL_CA_LIB/trust-linux.sh"
+# shellcheck source=lib/trust.sh
+. "$LOCAL_CA_LIB/trust.sh"
+# shellcheck source=lib/codesign.sh
+. "$LOCAL_CA_LIB/codesign.sh"
+
+usage() {
+  cat >&2 <<'EOF'
+local-ca: personal certificate toolkit
+
+Job 1: local development CA (cross-platform)
+  ca init                 ensure the root CA key+cert exist
+  ca trust                trust the CA in the OS store and in Firefox
+  ca untrust              remove the CA from the OS store and Firefox
+  ca rotate               replace the CA (explicit; breaks existing trust)
+  cert [--rotate] NAME [SAN...]
+                          issue a leaf server cert signed by the CA.
+                          SANs always include localhost and 127.0.0.1;
+                          each SAN arg is added as DNS or IP. Prints the
+                          cert and key paths.
+
+Job 2: code-signing identity (macOS only)
+  codesign-identity NAME [--bundle-id ID] [--bits N] [--days N]
+                          ensure a self-signed code-signing identity
+                          named NAME exists in the login keychain. Prints
+                          the identity name on stdout for build scripts.
+
+Other
+  help                    show this help
+
+State lives under $LOCAL_CA_HOME (default: ~/.local-ca) and is never
+committed. Machine-readable output (names, paths) goes to stdout; all
+logging goes to stderr.
+EOF
+}
+
+main() {
+  [ "$#" -ge 1 ] || { usage; exit 2; }
+  local cmd="$1"; shift
+  case "$cmd" in
+    ca)
+      [ "$#" -ge 1 ] || die "usage: local-ca ca <init|trust|untrust|rotate>"
+      local sub="$1"; shift
+      case "$sub" in
+        init)    ca_init ;;
+        trust)   ca_trust ;;
+        untrust) ca_untrust ;;
+        rotate)  ca_rotate ;;
+        *)       die "unknown 'ca' subcommand '$sub' (init|trust|untrust|rotate)" ;;
+      esac
+      ;;
+    cert)
+      cert_issue "$@"
+      ;;
+    codesign-identity)
+      codesign_ensure "$@"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    *)
+      err "unknown command '$cmd'"
+      usage
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"
