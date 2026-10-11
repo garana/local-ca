@@ -70,16 +70,24 @@ algorithms macOS accepts. `local-ca` does this; do not remove the flag.
 The identity must show up for the codesigning policy:
 
 ```
-security find-identity -v -p codesigning
+security find-identity -p codesigning
 ```
 
-You should see a line containing `"<name>"`. `local-ca` runs this check
-itself and fails if the name is not listed. Then a real sign must not
-prompt:
+You should see a line containing `"<name>"`. Note: do NOT use the `-v`
+(valid-only) flag here. Our cert is self-signed, so it is untrusted and
+lists as `CSSMERR_TP_NOT_TRUSTED`; `-v` hides untrusted identities and
+would wrongly report "0 valid identities". That is fine: an untrusted
+identity still signs. Trust is a verification concern, not a signing one,
+and the macOS LAN-access grant keys on the code identity, not on chain
+trust. `local-ca` runs this check itself (without `-v`) and fails only if
+the name is not listed at all.
+
+A real sign confirms it and must not prompt once the partition list is
+set:
 
 ```
 codesign --force --sign "<name>" /path/to/your/binary
-codesign --display --verbose=2 /path/to/your/binary
+codesign -dvvv /path/to/your/binary   # shows Authority=<name>
 ```
 
 ## Using it from a build

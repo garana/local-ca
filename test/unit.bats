@@ -188,3 +188,19 @@ setup() {
   run openssl pkcs12 -legacy -in "$p" -passin pass:pw -noout
   [ "$status" -eq 0 ]
 }
+
+# --- codesign find-identity predicate guard (issue #3) ---------------------
+
+# Our certs are self-signed, hence untrusted. 'find-identity -v' hides
+# untrusted identities, so the existence-check and success-gate must use
+# 'find-identity -p codesigning' WITHOUT -v, or the command dies after a
+# successful import and re-runs duplicate the cert.
+@test "codesign.sh never uses find-identity with -v" {
+  run grep -nE 'find-identity[[:space:]]+-v' "$LIB/codesign.sh"
+  [ "$status" -ne 0 ]
+}
+
+@test "codesign_identity_exists uses find-identity -p codesigning (no -v)" {
+  run grep -E 'security[[:space:]]+find-identity[[:space:]]+-p[[:space:]]+codesigning' "$LIB/codesign.sh"
+  [ "$status" -eq 0 ]
+}
