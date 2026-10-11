@@ -77,7 +77,12 @@ codesign_ensure() {
       -addext "extendedKeyUsage=critical,codeSigning" >&2
   ) || die "openssl failed to create the code-signing cert"
 
-  openssl pkcs12 -export -out "$p12" -inkey "$key" -in "$crt" \
+  # -legacy makes OpenSSL 3/4 write the older PKCS#12 MAC/PBE algorithms
+  # (SHA1 + 3DES) that macOS 'security import' (SecurityFramework) can
+  # verify. Without it, OpenSSL's modern default (AES-256-CBC + PBKDF2,
+  # SHA-256 MAC) makes security import fail with a misleading
+  # "MAC verification failed ... (wrong password?)". See issue #1.
+  openssl pkcs12 -export -legacy -out "$p12" -inkey "$key" -in "$crt" \
     -name "$name" -passout "pass:$p12pass" >&2 \
     || die "openssl failed to bundle the PKCS#12"
 

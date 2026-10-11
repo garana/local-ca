@@ -162,3 +162,29 @@ setup() {
   [ "$(firefox_nss_db_arg "$d1")" = "sql:$d1" ]
   [ "$(firefox_nss_db_arg "$d2")" = "dbm:$d2" ]
 }
+
+# --- codesign PKCS#12 legacy guard (issue #1) ------------------------------
+
+# The keychain import itself is not run in the automated suite (it mutates
+# the login keychain). This guards the one-flag regression that broke it:
+# OpenSSL 3/4 must export the PKCS#12 with -legacy, or macOS 'security
+# import' fails with "MAC verification failed".
+@test "codesign.sh exports the PKCS#12 with -legacy" {
+  run grep -E 'openssl[[:space:]]+pkcs12[[:space:]]+-export[[:space:]]+-legacy' "$LIB/codesign.sh"
+  [ "$status" -eq 0 ]
+}
+
+# Belt-and-braces: prove an OpenSSL -legacy p12 round-trips, so a future
+# OpenSSL that drops -legacy support is caught here too. No keychain.
+@test "openssl can export and re-read a -legacy PKCS#12" {
+  k="$BATS_TEST_TMPDIR/t.key"; c="$BATS_TEST_TMPDIR/t.crt"; p="$BATS_TEST_TMPDIR/t.p12"
+  openssl req -x509 -new -nodes -newkey rsa:2048 -sha256 -days 30 \
+    -keyout "$k" -out "$c" -subj "/CN=legacy-p12-test" >/dev/null 2>&1
+  run openssl pkcs12 -export -legacy -out "$p" -inkey "$k" -in "$c" -name t -passout pass:pw
+  [ "$status" -eq 0 ]
+  [ -s "$p" ]
+  # Reading legacy algorithms back also needs the legacy provider; this
+  # round-trips the file the same way it was written.
+  run openssl pkcs12 -legacy -in "$p" -passin pass:pw -noout
+  [ "$status" -eq 0 ]
+}

@@ -25,6 +25,17 @@ is why the command is idempotent: the same common name every time.
 This is a separate trust domain from the CA in Job 1. A code-signing
 cert is never signed by the CA.
 
+## PKCS#12 must be exported with -legacy
+
+To move the key and cert into the keychain, `local-ca` bundles them into
+a PKCS#12 file and runs `security import`. OpenSSL 3 and 4 default to a
+modern PKCS#12 scheme (AES-256-CBC + PBKDF2 with a SHA-256 MAC) that
+macOS's `security import` cannot verify; it fails with the misleading
+message `MAC verification failed during PKCS12 import (wrong password?)`
+even though the password is correct. The fix is to export with the
+`-legacy` flag (OpenSSL 3.0+), which writes the older SHA1 + 3DES
+algorithms macOS accepts. `local-ca` does this; do not remove the flag.
+
 ## The three things that must be right
 
 1. Correct extended key usage on the cert.
