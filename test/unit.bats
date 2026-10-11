@@ -209,3 +209,24 @@ setup() {
   run grep -E 'security[[:space:]]+find-identity[[:space:]]+-p[[:space:]]+codesigning' "$LIB/codesign.sh"
   [ "$status" -eq 0 ]
 }
+
+# --- set-key-partition-list scope guard (issue #9) -------------------------
+
+# The partition-list call must be scoped to our key with -l "$name".
+# Unscoped, -s matches every signing key in the login keychain, including
+# keys from other apps/the system that cannot be modified, and the call
+# fails. It must NOT be silently discarded with >/dev/null 2>&1 either:
+# a no-match exits 0, so the output has to be inspected.
+@test "codesign.sh scopes set-key-partition-list to the key label" {
+  # The -l may sit on a continued line, so scan the call's lines (from
+  # set-key-partition-list up to the keychain arg) for -l "$name".
+  run bash -c "awk '/set-key-partition-list/{f=1} f{print} /\"\\\$kc\"/{if(f)exit}' \"$LIB/codesign.sh\" | grep -q -- '-l \"\$name\"'"
+  [ "$status" -eq 0 ]
+}
+
+@test "codesign.sh does not swallow set-key-partition-list output" {
+  # the old bug: '... >/dev/null 2>&1 || warn'. Ensure that exact
+  # discard-both-streams pattern is not used on the partition-list call.
+  run bash -c "awk '/set-key-partition-list/{f=1} f{print} /\"\\\$kc\"/{if(f)exit}' \"$LIB/codesign.sh\" | grep -q '>/dev/null 2>&1'"
+  [ "$status" -ne 0 ]
+}
