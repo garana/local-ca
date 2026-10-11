@@ -30,8 +30,14 @@ DEFAULT_CODESIGN_DAYS=3650
 ## A): on macOS a user-domain 'add-trusted-cert' does not make a
 ## self-signed code-signing cert pass 'find-identity -v', so the gate
 ## died even after the trust dialog was answered. Reverted in issue #7.
+##
+## Queries the login keychain EXPLICITLY (not the global search list). We
+## always import into the login keychain, so scoping the lookup there
+## makes both the idempotency check and the post-import gate robust: a
+## wrong or corrupted user search list otherwise makes find-identity see
+## nothing and the gate die even though the identity is present. Issue #11.
 codesign_identity_exists() {
-  security find-identity -p codesigning 2>/dev/null \
+  security find-identity -p codesigning "$(login_keychain)" 2>/dev/null \
     | grep -Fq "\"$1\""
 }
 
@@ -151,7 +157,7 @@ codesign_ensure() {
   # self-signed, so it lists as untrusted (CSSMERR_TP_NOT_TRUSTED); that
   # is expected and does not stop codesign from signing with it.
   if ! codesign_identity_exists "$name"; then
-    die "identity '$name' not listed by 'security find-identity -p codesigning' after import"
+    die "identity '$name' not listed by 'security find-identity -p codesigning <login-keychain>' after import"
   fi
   log "verified: 'security find-identity -p codesigning' lists '$name' (self-signed, shown untrusted; still usable to sign)"
   [ -f "$cer" ] && log "exported cert: $cer"
