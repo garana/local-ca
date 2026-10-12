@@ -230,3 +230,32 @@ setup() {
   run bash -c "awk '/set-key-partition-list/{f=1} f{print} /\"\\\$kc\"/{if(f)exit}' \"$LIB/codesign.sh\" | grep -q '>/dev/null 2>&1'"
   [ "$status" -ne 0 ]
 }
+
+# --- temp-dir RETURN trap guard (issue #13) --------------------------------
+
+# The RETURN trap that cleans up the temp dir must guard $tmp. A RETURN
+# trap is not scoped to its function, so it also fires on later function
+# returns (e.g. main) where tmp is unset; a bare $tmp aborts under set -u
+# after the command already succeeded.
+@test "codesign.sh RETURN trap guards \$tmp" {
+  # the trap body must reference the guarded form ${tmp:-}
+  run grep -E "trap .*\\\$\{tmp:-\}.* RETURN" "$LIB/codesign.sh"
+  [ "$status" -eq 0 ]
+  # and must NOT use the unguarded bare form rm -rf "$tmp" in a trap
+  run grep -E "trap 'rm -rf \"\\\$tmp\"' RETURN" "$LIB/codesign.sh"
+  [ "$status" -ne 0 ]
+}
+
+# Behavioral: the exact pattern (local tmp + RETURN trap, called from a
+# wrapper) must not abort under 'set -u' on the outer return.
+@test "guarded RETURN trap survives set -u on an outer return" {
+  run bash -c '
+    set -euo pipefail
+    f() { local tmp; tmp="$(mktemp -d)"; trap '\''if [ -n "${tmp:-}" ]; then rm -rf "$tmp"; fi'\'' RETURN; :; }
+    main() { f; :; }
+    main
+    echo ok
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" = "ok" ]
+}

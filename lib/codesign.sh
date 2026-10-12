@@ -74,7 +74,12 @@ codesign_ensure() {
 
   log "creating self-signed code-signing identity '$name'"
   local tmp; tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
+  # Clean up the temp dir on return. Guard $tmp: a RETURN trap is not
+  # scoped to this function, so it also fires when later functions (e.g.
+  # the entry script's main) return, where tmp is out of scope; under
+  # 'set -u' a bare $tmp would then abort with "tmp: unbound variable"
+  # after the command already succeeded. See issue #13.
+  trap 'if [ -n "${tmp:-}" ]; then rm -rf "$tmp"; fi' RETURN
   local key="$tmp/$name.key" crt="$tmp/$name.crt" p12="$tmp/$name.p12"
   local p12pass; p12pass="$name-$$-import"
 
